@@ -13,11 +13,11 @@ jobs:
 
     env:
       # >>> HIER ANPASSEN <<<
-      SCHEME: MyApp
+      SCHEME: DerNagelhof
       # Wenn du CocoaPods verwendest: WORKSPACE setzen und PROJECT leer lassen
-      WORKSPACE: MyApp.xcworkspace
+      WORKSPACE: DerNagelhof.xcworkspace
       # Wenn du KEINE Pods hast: PROJECT setzen und WORKSPACE leer lassen
-      PROJECT: MyApp.xcodeproj
+      PROJECT: DerNagelhof.xcodeproj
 
     steps:
       - name: Checkout
