@@ -13,11 +13,11 @@ jobs:
 
     env:
       # >>> HIER ANPASSEN <<<
-      SCHEME: DerNagelhof
-      # Wenn du CocoaPods verwendest, WORKSPACE setzen und PROJECT leer lassen:
-      WORKSPACE: DerNagelhof.xcworkspace
-      # Wenn du KEINE Pods hast, PROJECT setzen und WORKSPACE leer lassen:
-      PROJECT: DerNagelhof.xcodeproj
+      SCHEME: MyApp
+      # Wenn du CocoaPods verwendest: WORKSPACE setzen und PROJECT leer lassen
+      WORKSPACE: MyApp.xcworkspace
+      # Wenn du KEINE Pods hast: PROJECT setzen und WORKSPACE leer lassen
+      PROJECT: MyApp.xcodeproj
 
     steps:
       - name: Checkout
@@ -25,30 +25,46 @@ jobs:
 
       - name: Select Xcode (optional)
         run: |
-          # Versucht Xcode 16 zu aktivieren; wenn nicht vorhanden, ignoriere
           sudo xcode-select -s /Applications/Xcode_16.app || true
           xcodebuild -version
 
+      # NEU: erst Projekte/Schemes listen, bevor wir Pods anfassen
+      - name: Print projects & schemes (pre-pods)
+        run: |
+          set -euo pipefail
+          echo "=== Listing Xcode projects/workspaces ==="
+          ls -1 *.xcodeproj || true
+          ls -1 *.xcworkspace || true
+          if [ -n "${WORKSPACE:-}" ]; then
+            echo "=== xcodebuild -list (workspace) ==="
+            xcodebuild -workspace "$WORKSPACE" -list || true
+          fi
+          if [ -n "${PROJECT:-}" ]; then
+            echo "=== xcodebuild -list (project) ==="
+            xcodebuild -project "$PROJECT" -list || true
+          fi
+          echo "Hinweis: Nutze einen der oben gelisteten Scheme-Namen in env.SCHEME"
+
       - name: Install CocoaPods (if Podfile exists)
         run: |
+          set -euo pipefail
           if [ -f "Podfile" ]; then
             sudo gem install cocoapods --no-document
+            # Mini-Check: Warnen, wenn noch das falsche Placeholder-Target im Podfile steht
+            if grep -q 'target default_app_target do' Podfile; then
+              echo "::error ::Dein Podfile enthält noch 'target default_app_target do'. Bitte ersetze es durch target 'DEIN_TARGET_NAME' do"
+              exit 1
+            fi
             pod install --repo-update
-          fi
-
-      - name: Print Schemes (debug)
-        run: |
-          if [ -n "$WORKSPACE" ]; then
-            xcodebuild -workspace "$WORKSPACE" -list
           else
-            xcodebuild -project "$PROJECT" -list
+            echo "Kein Podfile gefunden – CocoaPods wird übersprungen."
           fi
 
       - name: Build .app (no code signing)
         run: |
           set -euo pipefail
           DERIVED="build"
-          if [ -n "$WORKSPACE" ]; then
+          if [ -n "${WORKSPACE:-}" ] && [ -f "$WORKSPACE" ]; then
             xcodebuild \
               -workspace "$WORKSPACE" \
               -scheme "$SCHEME" \
