@@ -3,9 +3,7 @@ name: Build iOS IPA (unsigned)
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [ main, master ]
 
 jobs:
   build-ipa:
@@ -14,9 +12,7 @@ jobs:
     env:
       # >>> HIER ANPASSEN <<<
       SCHEME: DerNagelhof
-      # Wenn du CocoaPods verwendest: WORKSPACE setzen und PROJECT leer lassen
-      WORKSPACE: DerNagelhof.xcworkspace
-      # Wenn du KEINE Pods hast: PROJECT setzen und WORKSPACE leer lassen
+      WORKSPACE:
       PROJECT: DerNagelhof.xcodeproj
 
     steps:
@@ -27,12 +23,11 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_16.app || true
           xcodebuild -version
+          xcodebuild -showsdks || true
 
-      # NEU: erst Projekte/Schemes listen, bevor wir Pods anfassen
-      - name: Print projects & schemes (pre-pods)
+      - name: Print projects & schemes (pre-build)
         run: |
           set -euo pipefail
-          echo "=== Listing Xcode projects/workspaces ==="
           ls -1 *.xcodeproj || true
           ls -1 *.xcworkspace || true
           if [ -n "${WORKSPACE:-}" ]; then
@@ -43,44 +38,20 @@ jobs:
             echo "=== xcodebuild -list (project) ==="
             xcodebuild -project "$PROJECT" -list || true
           fi
-          echo "Hinweis: Nutze einen der oben gelisteten Scheme-Namen in env.SCHEME"
+          echo "Hinweis: env.SCHEME muss mit einem der gelisteten Schemes übereinstimmen."
 
-      - name: Install CocoaPods (if Podfile exists)
-        run: |
-          set -euo pipefail
-          if [ -f "Podfile" ]; then
-            sudo gem install cocoapods --no-document
-            # Mini-Check: Warnen, wenn noch das falsche Placeholder-Target im Podfile steht
-            if grep -q 'target default_app_target do' Podfile; then
-              echo "::error ::Dein Podfile enthält noch 'target default_app_target do'. Bitte ersetze es durch target 'DEIN_TARGET_NAME' do"
-              exit 1
-            fi
-            pod install --repo-update
-          else
-            echo "Kein Podfile gefunden – CocoaPods wird übersprungen."
-          fi
-
-      - name: Build .app (no code signing)
+      - name: Build .app (no code signing; generic iOS destination)
         run: |
           set -euo pipefail
           DERIVED="build"
-          if [ -n "${WORKSPACE:-}" ] && [ -f "$WORKSPACE" ]; then
-            xcodebuild \
-              -workspace "$WORKSPACE" \
-              -scheme "$SCHEME" \
-              -configuration Release \
-              -sdk iphoneos \
-              -derivedDataPath "$DERIVED" \
-              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY=""
-          else
-            xcodebuild \
-              -project "$PROJECT" \
-              -scheme "$SCHEME" \
-              -configuration Release \
-              -sdk iphoneos \
-              -derivedDataPath "$DERIVED" \
-              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY=""
-          fi
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY=""
           echo "APP_DIR=$DERIVED/Build/Products/Release-iphoneos" >> $GITHUB_ENV
 
       - name: Package IPA (unsigned)
@@ -89,8 +60,10 @@ jobs:
           APP_PATH=$(find "$APP_DIR" -maxdepth 1 -name "*.app" -print -quit)
           if [ -z "$APP_PATH" ]; then
             echo "Keine .app gefunden unter $APP_DIR"
+            ls -la "$APP_DIR" || true
             exit 1
           fi
+          rm -rf Payload
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
           IPA_NAME="$(basename "$APP_PATH" .app).ipa"
