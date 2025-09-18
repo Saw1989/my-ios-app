@@ -1,0 +1,89 @@
+name: Build iOS IPA (unsigned)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+
+    env:
+      # >>> HIER ANPASSEN <<<
+      SCHEME: DerNagelhof
+      # Wenn du CocoaPods verwendest, WORKSPACE setzen und PROJECT leer lassen:
+      WORKSPACE: DerNagelhof.xcworkspace
+      # Wenn du KEINE Pods hast, PROJECT setzen und WORKSPACE leer lassen:
+      PROJECT: DerNagelhof.xcodeproj
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (optional)
+        run: |
+          # Versucht Xcode 16 zu aktivieren; wenn nicht vorhanden, ignoriere
+          sudo xcode-select -s /Applications/Xcode_16.app || true
+          xcodebuild -version
+
+      - name: Install CocoaPods (if Podfile exists)
+        run: |
+          if [ -f "Podfile" ]; then
+            sudo gem install cocoapods --no-document
+            pod install --repo-update
+          fi
+
+      - name: Print Schemes (debug)
+        run: |
+          if [ -n "$WORKSPACE" ]; then
+            xcodebuild -workspace "$WORKSPACE" -list
+          else
+            xcodebuild -project "$PROJECT" -list
+          fi
+
+      - name: Build .app (no code signing)
+        run: |
+          set -euo pipefail
+          DERIVED="build"
+          if [ -n "$WORKSPACE" ]; then
+            xcodebuild \
+              -workspace "$WORKSPACE" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath "$DERIVED" \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY=""
+          else
+            xcodebuild \
+              -project "$PROJECT" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath "$DERIVED" \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY=""
+          fi
+          echo "APP_DIR=$DERIVED/Build/Products/Release-iphoneos" >> $GITHUB_ENV
+
+      - name: Package IPA (unsigned)
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find "$APP_DIR" -maxdepth 1 -name "*.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "Keine .app gefunden unter $APP_DIR"
+            exit 1
+          fi
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          IPA_NAME="$(basename "$APP_PATH" .app).ipa"
+          /usr/bin/zip -r "$IPA_NAME" Payload >/dev/null
+          echo "IPA_NAME=$IPA_NAME" >> $GITHUB_ENV
+          echo "Erzeugt: $IPA_NAME"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.IPA_NAME }}
+          path: ${{ env.IPA_NAME }}
